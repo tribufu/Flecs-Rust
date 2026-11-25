@@ -1,4 +1,3 @@
-#[cfg(not(target_family = "wasm"))]
 use crate::core::{Entity, WorldRef};
 // Shared type definitions for function pointers that need different ABIs for WASM vs non-WASM
 use crate::sys;

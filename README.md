@@ -55,6 +55,12 @@ check out the demo [here](https://github.com/james-j-obrien/flecs-wgpu-demo)
 
 <img src="https://github.com/james-j-obrien/flecs-wgpu-demo/assets/30707409/b3b8f2fc-0758-433e-b82b-e3458f61f244" alt="demo" width="300"/>
 
+## Emscripten
+
+For the Rust target wasm32-unknown-emscripten, activate the Emscripten SDK and install libclang on the build host.
+The Web bindings are generated during the build using the active compiler's sysroot. Set LIBCLANG_PATH if libclang
+is installed outside the host's usual library search paths.
+
 ## Status: Alpha release
 
 The project is in the alpha release stage where the **core functionality** and some **addons** of Flecs have been **ported** and are available to use today. While there has been a lot of thought put into the current API, it's still in an experimental phase. The project aims to hit stable when all the soundness/safety issues are resolved and the API has been finalized with all of Flecs functionality. We encourage you to explore, test, and provide feedback, but please be aware of potential bugs and breaking changes as we continue to refine the API and add new features.

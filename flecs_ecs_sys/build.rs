@@ -1,10 +1,17 @@
 #![allow(clippy::all)]
 #![allow(warnings)]
 
-#[cfg(feature = "regenerate_binding")]
-fn generate_bindings() {
-    use std::{env, path::PathBuf};
+use std::{
+    env,
+    path::{Path, PathBuf},
+};
 
+const RELEASE_C_BUILD: bool = cfg!(any(
+    all(not(debug_assertions), not(feature = "force_build_debug")),
+    feature = "force_build_release"
+));
+
+fn generate_bindings(output: &Path, emscripten_sysroot: Option<&Path>) {
     #[derive(Debug)]
     struct CommentsCallbacks;
 
@@ -76,12 +83,26 @@ fn generate_bindings() {
         .blocklist_function("flecs_vasprintf")
         .blocklist_function("ecs_parser_warningv_")
         .layout_tests(false)
-        .raw_line("#![allow(clippy::all)]")
-        .raw_line("#![allow(warnings)]")
-        .raw_line("use super::*;")
-        .raw_line("use libc::FILE;")
         .clang_arg("-DFLECS_CUSTOM_BUILD")
         .clang_arg("-DFLECS_CPP");
+
+    if let Some(sysroot) = emscripten_sysroot {
+        // libclang defaults to hidden visibility for Wasm. Bindgen skips hidden functions.
+        bindings = bindings
+            .clang_arg(format!("--sysroot={}", sysroot.display()))
+            .clang_arg("-fvisibility=default");
+        if RELEASE_C_BUILD {
+            bindings = bindings.clang_arg("-DNDEBUG");
+        }
+    } else {
+        bindings = bindings
+            .raw_line("#![allow(clippy::all)]")
+            .raw_line("#![allow(warnings)]");
+    }
+
+    bindings = bindings
+        .raw_line("use super::*;")
+        .raw_line("use libc::FILE;");
 
     #[cfg(feature = "flecs_default_to_uncached_queries")]
     {
@@ -217,10 +238,28 @@ fn generate_bindings() {
 
     let bindings = bindings.generate().expect("Unable to generate bindings");
 
-    let crate_root: PathBuf = env::var("CARGO_MANIFEST_DIR").unwrap().into();
-    bindings
-        .write_to_file(crate_root.join("src/bindings.rs"))
-        .unwrap();
+    bindings.write_to_file(output).unwrap();
+}
+
+fn emscripten_sysroot() -> PathBuf {
+    let libc = cc::Build::new()
+        .get_compiler()
+        .to_command()
+        .arg("--print-file-name=libc.a")
+        .output()
+        .expect("could not query the Emscripten compiler");
+    assert!(
+        libc.status.success(),
+        "could not locate the Emscripten libc"
+    );
+
+    let path = String::from_utf8(libc.stdout).expect("invalid Emscripten libc path");
+    let path = Path::new(path.trim());
+    assert!(path.is_absolute(), "Emscripten did not resolve libc.a");
+    path.ancestors()
+        .nth(3)
+        .expect("invalid Emscripten sysroot layout")
+        .to_owned()
 }
 
 fn main() {
@@ -305,11 +344,7 @@ fn main() {
         #[cfg(feature = "flecs_safety_locks")]
         build.define("FLECS_MUT_ALIAS_LOCKS", None);
 
-        #[cfg(any(
-            all(not(debug_assertions), not(feature = "force_build_debug"),),
-            feature = "force_build_release"
-        ))]
-        {
+        if RELEASE_C_BUILD {
             build
                 .opt_level(3)
                 .define("NDEBUG", None)
@@ -340,8 +375,16 @@ fn main() {
         build.compile("flecs");
 
         //TODO C might complain about unused functions when disabling certain features, turn the warning off?
+    }
 
-        #[cfg(feature = "regenerate_binding")]
-        generate_bindings();
+    if env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("emscripten") {
+        let out_dir = PathBuf::from(env::var_os("OUT_DIR").unwrap());
+        generate_bindings(&out_dir.join("bindings.rs"), Some(&emscripten_sysroot()));
+    } else {
+        #[cfg(all(feature = "regenerate_binding", not(feature = "disable_build_c")))]
+        {
+            let crate_root = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap());
+            generate_bindings(&crate_root.join("src/bindings.rs"), None);
+        }
     }
 }

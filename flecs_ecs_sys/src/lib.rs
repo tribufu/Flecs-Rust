@@ -9,9 +9,15 @@ compile_error!(
     "Features 'force_build_release' and 'force_build_debug' cannot be enabled at the same time."
 );
 
-//skips whole file from cargo fmt --all --check for CI
+#[cfg(not(target_os = "emscripten"))]
 #[rustfmt::skip]
 mod bindings;
+
+#[cfg(target_os = "emscripten")]
+#[allow(clippy::all, warnings)]
+mod bindings {
+    include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
+}
 mod extensions;
 mod mbindings;
 
